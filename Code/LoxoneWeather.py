@@ -10,6 +10,7 @@ import datetime
 import requests
 import urlparse
 import os
+import pytz
 
 # HTTP Proxy Server for the Loxone Weather Service
 # (Can be run on a Raspberry Pi)
@@ -20,14 +21,17 @@ import os
 # Visit https://darksky.net to setup an account and use an evaluation account
 # (1000 requests per day is more than enough for your server)
 # The 'SECRET KEY' needs to be added:
-DARKSKY_SECRET_KEY = '### SECRET KEY ###'
-
-licenseExpiryDate = datetime.datetime(2049,12,31, 0, 0)
+OPENWEATHERMAP_API_KEY = os.environ.get("OPENWEATHERMAP_API_KEY")
+LANGUAGE = os.environ.get("LANGUAGE", "en")
+UNITS = os.environ.get("UNITS", "metric")
+licenseExpiryDate = datetime.datetime(2049, 12, 31, 0, 0)
 LOXONE_WEATHER_SERVICE_PORT = 6066
 
+
 def downloadReport(longitude, latitude, asl):
-    payload = {'extend': 'hourly', 'lang': 'de', 'units': 'ca'}
-    r = requests.get('https://api.darksky.net/forecast/'+DARKSKY_SECRET_KEY+'/{lon:.3f},{lat:.2f}'.format(lon=longitude,lat=latitude), params=payload)
+
+    r = requests.get('https://api.openweathermap.org/data/2.5/onecall?appid=' +
+                     OPENWEATHERMAP_API_KEY+'&lang={lang}&units={units}&lon={lon:.3f}&lat={lat:.2f}'.format(lon=longitude, lat=latitude, lang=LANGUAGE, units=UNITS))
     if r.status_code == 200:
         ret = r.content
     else:
@@ -73,55 +77,58 @@ def downloadReport(longitude, latitude, asl):
 # 34	Overcast with light snow (Loxone: Leichter Schneeschauer)
 # 35	Overcast with mixture of snow and rain (Loxone: Schneeregen)
 
+
 def loxoneWeatherIcon(weatherReportHourly):
-    iconDarksky = weatherReportHourly['icon']
+    weather = weatherReportHourly["weather"]
+
+    iconDarksky = weather[0]['main']
     if iconDarksky == 'clear-day' or iconDarksky == 'clear-night':
-        iconID = 1 # wolkenlos
+        iconID = 1  # wolkenlos
     elif iconDarksky == 'rain':
-        iconID = 23 # Regen
+        iconID = 23  # Regen
     elif iconDarksky == 'snow':
-        iconID = 24 # Schneefall
+        iconID = 24  # Schneefall
     elif iconDarksky == 'sleet':
-        iconID = 35 # Schneeregen
+        iconID = 35  # Schneeregen
 #    elif iconDarksky == 'wind':
 #        pass
     elif iconDarksky == 'fog':
-        iconID = 16 # Nebel
+        iconID = 16  # Nebel
     elif iconDarksky == 'cloudy':
-        iconID = 7 # Wolkig
+        iconID = 7  # Wolkig
     elif iconDarksky == 'partly-cloudy-day' or iconDarksky == 'partly-cloudy-night':
-        iconID = 7 # Wolkig
+        iconID = 7  # Wolkig
     elif iconDarksky == 'hail':
-        iconID = 35 # Schneeregen
+        iconID = 35  # Schneeregen
     elif iconDarksky == 'thunderstorm':
-        iconID = 28 # Gewitter
+        iconID = 28  # Gewitter
 #    elif iconDarksky == 'tornado':
 #        iconID = 29 # kräftiges Gewitter
     else:
-        iconID = 7 # Wolkig
+        iconID = 7  # Wolkig
 
     # fix the cloud cover icon
     if iconID == 7:
-        cloudCover = weatherReportHourly['cloudCover']
-        if cloudCover<0.125:
-            iconID = 1 # Wolkenlos und sonnig
-        elif cloudCover<0.5:
-            iconID = 3 # Heiter und leicht bewölkt
-        elif cloudCover<0.75:
-            iconID = 9 # bewölkt bis stark bewölkt
-        elif cloudCover<0.875:
-            iconID = 19 # Stark bewölkt
+        cloudCover = weatherReportHourly['clouds']
+        if cloudCover < 0.125:
+            iconID = 1  # Wolkenlos und sonnig
+        elif cloudCover < 0.5:
+            iconID = 3  # Heiter und leicht bewölkt
+        elif cloudCover < 0.75:
+            iconID = 9  # bewölkt bis stark bewölkt
+        elif cloudCover < 0.875:
+            iconID = 19  # Stark bewölkt
         else:
-            iconID = 22 # fast bedeckt und bedeckt
+            iconID = 22  # fast bedeckt und bedeckt
 
     # add rain, if necessary
-    if iconID == 23 and weatherReportHourly['precipIntensity'] > 0.0:
-        if weatherReportHourly['precipIntensity']<0.5:
-            iconID = 33 # Leichter Regen
-        elif weatherReportHourly['precipIntensity']<=4:
-            iconID = 23 # Regen
+    if iconID == 23 and weatherReportHourly['rain'] > 0.0:
+        if weatherReportHourly['rain'] < 0.5:
+            iconID = 33  # Leichter Regen
+        elif weatherReportHourly['rain'] <= 4:
+            iconID = 23  # Regen
         else:
-            iconID = 25 # Starker Regen
+            iconID = 25  # Starker Regen
     return iconID
 
 
@@ -131,114 +138,159 @@ def generateCSV(weatherReport, asl):
     csv += "<mb_metadata>\n"
     csv += "id;name;longitude;latitude;height (m.asl.);country;timezone;utc-timedifference;sunrise;sunset;\n"
     csv += "local date;weekday;local time;temperature(C);feeledTemperature(C);windspeed(km/h);winddirection(degr);wind gust(km/h);low clouds(%);medium clouds(%);high clouds(%);precipitation(mm);probability of Precip(%);snowFraction;sea level pressure(hPa);relative humidity(%);CAPE;picto-code;radiation (W/m2);\n"
-    csv += "</mb_metadata><valid_until>{:{dfmt}}</valid_until>\n".format(licenseExpiryDate, dfmt='%Y-%m-%d')
+    csv += "</mb_metadata><valid_until>{:{dfmt}}</valid_until>\n".format(
+        licenseExpiryDate, dfmt='%Y-%m-%d')
     # CAPE = Convective available potential energy <https://en.wikipedia.org/wiki/Convective_available_potential_energy>
     csv += "<station>\n"
-    longitude = weatherReport['longitude']
+    longitude = weatherReport['lon']
     if longitude < 0:
         longitude = -longitude
         eastwest = 'W'
     else:
         eastwest = 'E'
-    latitude = weatherReport['latitude']
+    latitude = weatherReport['lat']
     if latitude < 0:
         latitude = -latitude
         northsouth = 'S'
     else:
         northsouth = 'N'
 
-    sunriseTime = '{:{sunrise}}'.format(datetime.datetime.fromtimestamp(weatherReport['daily']['data'][0]['sunriseTime']), sunrise='%H:%M')
-    sunsetTime = '{:{sunset}}'.format(datetime.datetime.fromtimestamp(weatherReport['daily']['data'][0]['sunsetTime']), sunset='%H:%M')
-    csv += ";Kollerschlag;{lon:.2f}°{eastwest};{lat:.2f}°{northsouth} ;{asl};;CEST;UTC{utcTimedifference:+.1f};{sunrise};{sunset};\n".format(lon=longitude,eastwest=eastwest,lat=latitude,northsouth=northsouth,asl=asl,utcTimedifference=weatherReport['offset'],sunrise=sunriseTime,sunset=sunsetTime)
-    for hourly in weatherReport['hourly']['data']:
-        time = datetime.datetime.fromtimestamp(hourly['time'])
+    local_tz = pytz.timezone(weatherReport['timezone'])
+    utcTimeDiff = local_tz.utcoffset(datetime.datetime.now()).seconds / 3600
+    print utcTimeDiff
+
+    sunriseTime = '{:{sunrise}}'.format(datetime.datetime.fromtimestamp(
+        weatherReport['daily'][0]['sunrise']), sunrise='%H:%M')
+    sunsetTime = '{:{sunset}}'.format(datetime.datetime.fromtimestamp(
+        weatherReport['daily'][0]['sunset']), sunset='%H:%M')
+    csv += ";Kollerschlag;{lon:.2f}°{eastwest};{lat:.2f}°{northsouth} ;{asl};;CEST;UTC{utcTimedifference:+.1f};{sunrise};{sunset};\n".format(
+        lon=longitude, eastwest=eastwest, lat=latitude, northsouth=northsouth, asl=asl, utcTimedifference=utcTimeDiff, sunrise=sunriseTime, sunset=sunsetTime)
+    for hourly in weatherReport['hourly']:
+        time = datetime.datetime.fromtimestamp(hourly['dt'])
         iconID = loxoneWeatherIcon(hourly)
-        csv += '{:{localDate};{weekday};{localTime}};'.format(time, localDate='%d.%m.%Y', weekday='%a', localTime='%H')
-        csv += '{:5.1f};'.format(hourly['temperature'])
-        csv += '{:5.1f};'.format(hourly['apparentTemperature'])
-        csv += '{:3.0f};'.format(hourly['windSpeed'])
-        csv += '{:3.0f};'.format(hourly['windBearing'])
-        csv += '{:3.0f};'.format(hourly['windGust'])
+        csv += '{:{localDate};{weekday};{localTime}};'.format(
+            time, localDate='%d.%m.%Y', weekday='%a', localTime='%H')
+        csv += '{:5.1f};'.format(hourly['temp'])
+        csv += '{:5.1f};'.format(hourly['feels_like'])
+        csv += '{:3.0f};'.format(hourly['wind_speed'])
+        csv += '{:3.0f};'.format(hourly['wind_deg'])
+        if "wind_gust" in hourly:
+            csv += '{:3.0f};'.format(hourly['wind_gust'])
+        else:
+            csv += '{:3.0f};'.format(0)
+
         csv += '{:3.0f};'.format(0.0)
-        csv += '{:3.0f};'.format(hourly['cloudCover']*100)
+        csv += '{:3.0f};'.format(hourly['clouds'])
         csv += '{:3.0f};'.format(0.0)
-        csv += '{:5.1f};'.format(hourly['precipIntensity'])
-        csv += '{:3.0f};'.format(hourly['precipProbability'])
+        if "rain" in hourly:
+            csv += '{:5.1f};'.format(hourly['rain']["1h"])
+        else:
+            csv += '{:5.1f};'.format(0.0)
+        csv += '{:3.0f};'.format(0.0)
         csv += '{:3.1f};'.format(0.0)
         csv += '{:4.0f};'.format(hourly['pressure'])
-        csv += '{:3.0f};'.format(hourly['humidity']*100)
+        csv += '{:3.0f};'.format(hourly['humidity'])
         csv += '{:6d};'.format(0)
         csv += '{:d};'.format(iconID)
-        csv += '{:4.0f};'.format(hourly['uvIndex']*100)
+        if "uvi" in hourly:
+            csv += '{:4.0f};'.format(hourly['uvi'])
+        else:
+            csv += '{:4.0f};'.format(0.0)
         csv += '\n'
     csv += "</station>\n"
     return csv
 
+
 def generateXML(weatherReport, asl):
     xml = '<?xml version="1.0"?>'
-    xml += '<metdata_feature_collection p="m" valid_until="{:{dfmt}}">'.format(licenseExpiryDate, dfmt='%Y-%m-%d')
+    xml += '<metdata_feature_collection p="m" valid_until="{:{dfmt}}">'.format(
+        licenseExpiryDate, dfmt='%Y-%m-%d')
 
-    for hourly in weatherReport['hourly']['data']:
-        time = datetime.datetime.fromtimestamp(hourly['time'])
+    for hourly in weatherReport['hourly']:
+        time = datetime.datetime.fromtimestamp(hourly['dt'])
         iconID = loxoneWeatherIcon(hourly)
         xml += '<metdata>'
         xml += '<timepoint>{:%Y-%m-%dT%H:%M:%S}</timepoint>'.format(time)
-        xml += '<TT>{:.1f}</TT>'.format(hourly['temperature']) # Temperature (C)
-        xml += '<FF>{:.1f}</FF>'.format(hourly['windSpeed']*1000/3600) # Wind Speed (m/s)
-        windBearing = hourly['windBearing']-180
+        xml += '<TT>{:.1f}</TT>'.format(hourly['temp'])  # Temperature (C)
+        # Wind Speed (m/s)
+        xml += '<FF>{:.1f}</FF>'.format(hourly['wind_speed']*1000/3600)
+        windBearing = hourly['wind_deg']-180
         if windBearing < 0:
             windBearing += 360
-        xml += '<DD>{:.0f}</DD>'.format(windBearing) # Wind Speed (Direction)
-        xml += '<RR1H>{:5.1f}</RR1H>'.format(hourly['precipIntensity']) # Rainfall (mm)
-        xml += '<PP0>{:.0f}</PP0>'.format(hourly['pressure']) # Pressure (hPa)
-        xml += '<RH>{:.0f}</RH>'.format(hourly['humidity']*100) # Humidity (%)
-        xml += '<HI>{:.1f}</HI>'.format(hourly['apparentTemperature']) # Perceived Temperature (C)
-        xml += '<RAD>{:4.0f}</RAD>'.format(hourly['uvIndex']*100) # Solar Irradiation (0-20% (<60), 20-40% (<100), 40-100%)
-        xml += '<WW>2</WW>' # Icon
-        xml += '<FFX>{:.1f}</FFX>'.format(hourly['windGust']*1000/3600) # Wind Speed (m/s)
-        xml += '<LC>{:.0f}</LC>'.format(0) # low clouds
-        xml += '<MC>{:.0f}</MC>'.format(hourly['cloudCover']*100) # medium clouds
-        xml += '<HC>{:.0f}</HC>'.format(0) # high clouds
-        xml += '<RAD4C>{:.0f}</RAD4C>'.format(hourly['uvIndex']) # UV Index
+        xml += '<DD>{:.0f}</DD>'.format(windBearing)  # Wind Speed (Direction)
+        if "rain" in hourly:
+            # Rainfall (mm)
+            xml += '<RR1H>{:5.1f}</RR1H>'.format(hourly['rain']["1h"])
+        else:
+            xml += '<RR1H>0</RR1H>'
+
+        xml += '<PP0>{:.0f}</PP0>'.format(hourly['pressure'])  # Pressure (hPa)
+        xml += '<RH>{:.0f}</RH>'.format(hourly['humidity'])  # Humidity (%)
+        # Perceived Temperature (C)
+        xml += '<HI>{:.1f}</HI>'.format(hourly['feels_like'])
+        # Solar Irradiation (0-20% (<60), 20-40% (<100), 40-100%)
+        if "uvi" in hourly:
+            xml += '<RAD>{:4.0f}</RAD>'.format(hourly['uvi'])
+            xml += '<RAD4C>{:.0f}</RAD4C>'.format(hourly['uvi'])  # UV Index
+        else:
+            xml += '<RAD>0.0</RAD>'
+            xml += '<RAD4C>0.0</RAD4C>'
+        xml += '<WW>2</WW>'  # Icon
+        # Wind Speed (m/s)
+        if "wind_gust" in hourly:
+            xml += '<FFX>{:.1f}</FFX>'.format(hourly['wind_gust']*1000/3600)
+        xml += '<LC>{:.0f}</LC>'.format(0)  # low clouds
+        xml += '<MC>{:.0f}</MC>'.format(hourly['clouds'])  # medium clouds
+        xml += '<HC>{:.0f}</HC>'.format(0)  # high clouds
+
         xml += '</metdata>'
     xml += '</metdata_feature_collection>\n'
     return xml
 
+
 class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
     def do_GET(self):
-        path,query = self.path.split('?')
+        try:
+            path, query = self.path.split('?')
+        except ValueError:
+            self.send_response(404)
+            self.end_headers()
+            return
+
         query = urlparse.parse_qs(query)
         self.server_version = 'Apache/2.4.7 (Ubuntu)'
         self.sys_version = ''
         self.protocol_version = 'HTTP/1.1'
-        if path == '/forecast/':
-            self.send_response(200)
-            self.send_header('Vary', 'Accept-Encoding')
-            self.send_header('Connection', 'close')
-            self.send_header('Transfer-Encoding', 'chunked')
-            if 'asl' in query:
-                asl = int(query['asl'][0])
-            else:
-                asl = 0
-            lat,long = query['coord'][0].split(',')
-            if os.path.isfile('weather.json'):
-                jsonReport = json.loads(open('weather.json').read())
-            else:
-                jsonReport = json.loads(downloadReport(float(long), float(lat), asl))
-            if 'format' in query and int(query['format'][0]) == 1:
-                reply = generateCSV(jsonReport, asl)
-                self.send_header('Content-Type', 'text/plain')
-            else:
-                reply = generateXML(jsonReport, asl)
-                self.send_header('Content-Type', 'text/xml')
-            self.end_headers()
-            self.wfile.write("%x\r\n%s\r\n" % (len(reply), reply))
-            self.wfile.write("0\r\n\r\n")
-        else:
-            print(path)
-            print(urlparse.parse_qs(query))
+        if path != '/forecast/':
+            # print(path)
+            # print(urlparse.parse_qs(query))
             self.send_response(404)
             self.end_headers()
+
+        self.send_response(200)
+        self.send_header('Vary', 'Accept-Encoding')
+        self.send_header('Connection', 'close')
+        self.send_header('Transfer-Encoding', 'chunked')
+        if 'asl' in query:
+            asl = int(query['asl'][0])
+        else:
+            asl = 0
+        lat, long = query['coord'][0].split(',')
+        if os.path.isfile('weather.json'):
+            jsonReport = json.loads(open('weather.json').read())
+        else:
+            jsonReport = json.loads(
+                downloadReport(float(long), float(lat), asl))
+        if 'format' in query and int(query['format'][0]) == 1:
+            reply = generateCSV(jsonReport, asl)
+            self.send_header('Content-Type', 'text/plain')
+        else:
+            reply = generateXML(jsonReport, asl)
+            self.send_header('Content-Type', 'text/xml')
+        self.end_headers()
+        self.wfile.write("%x\r\n%s\r\n" % (len(reply), reply))
+        self.wfile.write("0\r\n\r\n")
+
 
 SocketServer.TCPServer.allow_reuse_address = True
 httpd = SocketServer.ForkingTCPServer(('', LOXONE_WEATHER_SERVICE_PORT), Proxy)
