@@ -310,7 +310,7 @@ To receive notifications you have to to an HTTPS POST to `https://push.loxoneclo
 
 Loxone also offers a subscription to weather service. This service seems to be offered via [Meteo Blue](https://www.meteoblue.com), but routed via a Loxone server [weather.loxone.com](), which validates the subscription. When started the weather service some years ago, Loxone used Ubimet as weather service. But this changed some time ago. Loxone does not disclose which service they use nowadays.
 
-Several times a day the Miniserver sends the following request: [http://weather.loxone.com:6066/forecast/?user=loxone_504F11223344&coord=13.8408,48.6051&asl=20&format=1]()
+Several times a day (hourly, but at random times) the Miniserver sends the following request: [https://weather.loxone.com:6066/forecast/?user=loxone_504F11223344&coord=13.8408,48.6051&asl=20&format=1]()
 
 You notice a couple of parameters:
 
@@ -333,6 +333,7 @@ If there is no paid subscription, the response will be this:
     <?xml version="1.0"?>
     <ServiceExceptionReport><ServiceException>authentication exception: user is not active</ServiceException></ServiceExceptionReport>
 
+From Loxone Config Version 16, Loxone switched over from HTTP to HTTPS for all Miniserver Generation 2. All Miniservers Generation 1 currently still use HTTP. When requesting weather data via HTTPS, the Miniserver verifies the correspnding HTTPS certificate. That is why all existing scripts which simulates the weather service, does not work anymore.
 
 Here is a shortened example for the XML/CSV format. I've only shown the first 2 and last 2 entries. Overall it is 181 entries large. As you can see it has a header, describing the individual columns in the CSV block below. It also has a `valid_until` entry, which contains the subscription expiry date. The Miniserver will start warning, once you hit that date. `Kollerschlag` is a bug, it seems to not know the city, so it falls back to `Kollerschlag`. Longitude and latitude are correct, as well as the elevation. Sunrise/Sunset are also provided, but the Miniserver does it's own calculation locally.
 
